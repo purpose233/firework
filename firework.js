@@ -9,20 +9,120 @@
     duration: 30,
     firePieceNumber: 30,
     firePieceSize: 25,
-    style: 'dark',
+    easing: 'Quad',
+    background: 'rgb(10,10,20)',
+    //style: 'dark',
+    trigger: 'click',
     fullScreen: true
   }
 
-  const styleList = ['dark', 'light']
+  // Thanks to BezierEasing https://github.com/gre/bezier-easing,
+  //           and Anime.js https://github.com/juliangarnier/anime.
+  const bezier = (() => {
 
-  const colors = {
-    'darkBackground' : 'rgb(10,10,20)',
-    'lightBackground' : 'rgb(200,200,200)',
-    'firePieceRed' : 'rgb(255,0,128)',
-    'firePieceGreen' : 'rgb(0,255,128)',
-    'firePieceBlue' : 'rgb(40,150,255)',
-    'firePieceYellow' : 'rgb(250,250,130)'
-  }
+    const kSplineTableSize = 11
+    const kSampleStepSize = 1.0 / (kSplineTableSize - 1.0)
+
+    function A (aA1, aA2) { return 1.0 - 3.0 * aA2 + 3.0 * aA1 }
+    function B (aA1, aA2) { return 3.0 * aA2 - 6.0 * aA1 }
+    function C (aA1)      { return 3.0 * aA1 }
+
+    function calcBezier (aT, aA1, aA2) { return ((A(aA1, aA2) * aT + B(aA1, aA2)) * aT + C(aA1)) * aT }
+    function getSlope (aT, aA1, aA2) { return 3.0 * A(aA1, aA2) * aT * aT + 2.0 * B(aA1, aA2) * aT + C(aA1) }
+
+    function binarySubdivide (aX, aA, aB, mX1, mX2) {
+      let currentX, currentT, i = 0
+      do {
+        currentT = aA + (aB - aA) / 2.0
+        currentX = calcBezier(currentT, mX1, mX2) - aX
+        if (currentX > 0.0) { aB = currentT } else { aA = currentT }
+      } while (Math.abs(currentX) > 0.0000001 && ++i < 10)
+      return currentT
+    }
+
+    function newtonRaphsonIterate (aX, aGuessT, mX1, mX2) {
+      for (let i = 0; i < 4; ++i) {
+        const currentSlope = getSlope(aGuessT, mX1, mX2)
+        if (currentSlope === 0.0) return aGuessT
+        const currentX = calcBezier(aGuessT, mX1, mX2) - aX
+        aGuessT -= currentX / currentSlope
+      }
+      return aGuessT
+    }
+
+    function bezier(mX1, mY1, mX2, mY2) {
+
+      if (!(0 <= mX1 && mX1 <= 1 && 0 <= mX2 && mX2 <= 1)) return
+      let sampleValues = new Float32Array(kSplineTableSize)
+
+      if (mX1 !== mY1 || mX2 !== mY2) {
+        for (let i = 0; i < kSplineTableSize; ++i) {
+          sampleValues[i] = calcBezier(i * kSampleStepSize, mX1, mX2)
+        }
+      }
+
+      function getTForX(aX) {
+
+        let intervalStart = 0.0
+        let currentSample = 1
+        const lastSample = kSplineTableSize - 1
+
+        for (; currentSample !== lastSample && sampleValues[currentSample] <= aX; ++currentSample) {
+          intervalStart += kSampleStepSize
+        }
+
+        --currentSample
+
+        const dist = (aX - sampleValues[currentSample]) / (sampleValues[currentSample + 1] - sampleValues[currentSample])
+        const guessForT = intervalStart + dist * kSampleStepSize
+        const initialSlope = getSlope(guessForT, mX1, mX2)
+
+        if (initialSlope >= 0.001) {
+          return newtonRaphsonIterate(aX, guessForT, mX1, mX2)
+        } else if (initialSlope === 0.0) {
+          return guessForT
+        } else {
+          return binarySubdivide(aX, intervalStart, intervalStart + kSampleStepSize, mX1, mX2)
+        }
+
+      }
+
+      return x => {
+        if (mX1 === mY1 && mX2 === mY2) return x
+        if (x === 0) return 0
+        if (x === 1) return 1
+        return calcBezier(getTForX(x), mY1, mY2)
+      }
+
+    }
+
+    return bezier
+  })()
+
+  // Data from Ceaser https://matthewlein.com/ceaser/
+  const easings = (() => {
+    const names = ['Quad', 'Cubic', 'Quart', 'Quint', 'Sine', 'Expo', 'Circ']
+
+    const easingData = [
+        [0.455, 0.030, 0.515, 0.955], // easeInOutQuad
+        [0.645, 0.045, 0.355, 1.000], // easeInOutCubic
+        [0.770, 0.000, 0.175, 1.000], // easeInOutQuart
+        [0.860, 0.000, 0.070, 1.000], // easeInOutQuint
+        [0.445, 0.050, 0.550, 0.950], // easeInOutSine
+        [1.000, 0.000, 0.000, 1.000], // easeInOutExpo
+        [0.785, 0.135, 0.150, 0.860]  // easeInOutCirc
+    ]
+
+    let functions = {}
+
+    easingData.forEach((data, index) => {
+      functions[names[index]] = bezier.apply(this, data)
+    })
+
+    return functions
+  })()
+
+  const styleList = ['dark', 'light']
 
   const firePieceColors = ['rgb(255,0,128)', 'rgb(0,255,128)',
                            'rgb(40,150,255)', 'rgb(250,250,130)']
@@ -62,7 +162,8 @@
     }
   }
 
-  function linearEase (number, delta, begin, end, offsetPercentage, direction) {
+  // No longer used customized linear way of easing.
+  function linearEasing (number, delta, begin, end, offsetPercentage, direction) {
     offsetPercentage = ('undefined' === typeof offsetPercentage) ? 1.0 : offsetPercentage
     direction = ('undefined' === typeof direction) ? true : direction
 
@@ -73,94 +174,85 @@
     return number + deltaEased
   }
 
-  class FirePiece {
-    constructor(params = {}) {
-      this.position = {
-        'x' : params['position']['x'],
-        'y' : params['position']['y']
-      },
-      this.duration = params['duration']
-      this.range = params['range']
-      this.size = params['firePieceSize']
-
-      this.color = firePieceColors[Math.floor(Math.random() * 4)]
-      this.direction = {
-        'x' : Math.random() * 2 - 1,
-        'y' : Math.random() * 2 - 1
-      }
-      this.sizeReduce = this.size / this.duration
-      this.positionDelta = {
-        'x' : this.range * this.direction.x / this.duration,
-        'y' : this.range * this.direction.y / this.duration
-      }
-      this.currentPosition = {
-        'x' : this.position.x,
-        'y' : this.position.y
-      }
-      this.finalPostion = {
-        'x' : this.position.x + this.duration * this.positionDelta.x,
-        'y' : this.position.y + this.duration * this.positionDelta.y
-      }
-    }
-    draw (context) {
-      this.size = (this.size - this.sizeReduce) < 0 ? 0 : (this.size - this.sizeReduce)
-
-      this.currentPosition.x = linearEase(this.currentPosition.x, this.positionDelta.x,
-                                          this.position.x, this.finalPostion.x)
-      this.currentPosition.y = linearEase(this.currentPosition.y, this.positionDelta.y,
-                                          this.position.y, this.finalPostion.y)
-
-      context.beginPath()
-      context.strokeStyle = this.color
-      context.fillStyle = this.color
-      context.arc(this.currentPosition.x, this.currentPosition.y,
-                  this.size, 0, 2*Math.PI, true)
-      context.closePath()
-      context.fill()
-
-      this.duration--
-    }
-  }
-
-  class Fire {
-    constructor(params = {}) {
-      this.position = params['position']
-      this.firePieceNumber = params['firePieceNumber']
-      this.duration = params['duration']
-      this.range = params['range']
-      this.firePieceSize = params['firePieceSize']
-      this.firePieceList = []
-
-      this.getFirePieceList()
-    }
-    getFirePieceList () {
-      for (let i = 0; i < this.firePieceNumber; i++) {
-        let params = {
-          'position' : this.position,
-          'duration' : this.duration,
-          'range' : this.range,
-          'firePieceSize' : this.firePieceSize
-        }
-        this.firePieceList.push(new FirePiece(params))
-      }
-    }
-    draw (context) {
-      for (let i = 0; i < this.firePieceList.length; i++)
-        this.firePieceList[i].draw(context)
-
-      this.duration--
-    }
-    checkTimeUp () {
-      return this.duration <= 0
-    }
-  }
-
   function firework (params = {}) {
     let instance = createInstance(params)
     let fireList = []
 
     let canvas = document.getElementById(instance['targetId']);
     let context = canvas.getContext('2d')
+
+    let easing = easings[instance['easing']]
+
+    class FirePiece {
+      constructor(position) {
+        this.position = {
+          'x' : position['x'],
+          'y' : position['y']
+        }
+        this.duration = instance['duration']
+        this.range = instance['range']
+        this.size = instance['firePieceSize']
+
+        this.color = firePieceColors[Math.floor(Math.random() * 4)]
+        this.direction = {
+          'x' : Math.random() * 2 - 1,
+          'y' : Math.random() * 2 - 1
+        }
+        this.currentSize = this.size
+        this.currentPosition = {
+          'x' : this.position.x,
+          'y' : this.position.y
+        }
+        this.offestPostion = {
+          'x' : this.range * this.direction.x,
+          'y' : this.range * this.direction.y
+        }
+      }
+      draw (context) {
+        let currentProcess = easing(1 - this.duration / instance['duration'])
+
+        this.currentSize = this.size - currentProcess * this.size
+        this.currentPosition.x = this.position.x + this.offestPostion.x * currentProcess
+        this.currentPosition.y = this.position.y + this.offestPostion.y * currentProcess
+
+        context.beginPath()
+        context.strokeStyle = this.color
+        context.fillStyle = this.color
+        context.arc(this.currentPosition.x, this.currentPosition.y,
+          this.currentSize, 0, 2*Math.PI, true)
+        context.closePath()
+        context.fill()
+
+        this.duration--
+      }
+    }
+
+    class Fire {
+      constructor(position) {
+        this.position = {
+          'x' : position['x'],
+          'y' : position['y']
+        }
+        this.firePieceNumber = instance['firePieceNumber']
+        this.duration = instance['duration']
+        this.firePieceList = []
+
+        this.getFirePieceList()
+      }
+      getFirePieceList () {
+        for (let i = 0; i < this.firePieceNumber; i++)
+          this.firePieceList.push(new FirePiece(this.position))
+      }
+      draw (context) {
+        for (let i = 0; i < this.firePieceList.length; i++)
+          this.firePieceList[i].draw(context)
+
+        this.duration--
+      }
+      checkTimeUp () {
+        return this.duration <= 0
+      }
+    }
 
     function setCanvasStyle() {
       let windowSize = getWindowSize()
@@ -169,24 +261,21 @@
     }
 
     function initCanvasEvent () {
-      canvas.addEventListener('click', (e) => {
-        let params = {
-          'position' : getEventPosition(e),
-          'duration' : instance['duration'],
-          'firePieceNumber' : instance['firePieceNumber'],
-          'range' : instance['range'],
-          'firePieceSize' : instance['firePieceSize']
-        }
-
-        fireList.push(new Fire(params))
-      })
+      if (instance.trigger === 'click')
+        canvas.addEventListener('click', (e) => {
+          fireList.push(new Fire(getEventPosition(e)))
+        })
+      else if (instance.trigger === 'move')
+        canvas.addEventListener('mousemove', (e) => {
+          fireList.push(new Fire(getEventPosition(e)))
+        })
 
       if (instance.fullScreen)
         onresize = setCanvasStyle
     }
 
     function drawBackground(context) {
-      context.fillStyle = colors.darkBackground
+      context.fillStyle = instance.background
       let windowSize = getWindowSize()
       context.rect(0,0,windowSize.width,windowSize.height)
       context.fill()
