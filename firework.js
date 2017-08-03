@@ -10,7 +10,7 @@
     firePieceNumber: 30,
     firePieceSize: 25,
     easing: 'Quad',
-    background: 'rgb(10,10,20)',
+    background: 'rgba(0,0,0,0.85)',
     //style: 'dark',
     trigger: 'click',
     fullScreen: true
@@ -258,17 +258,28 @@
       let windowSize = getWindowSize()
       canvas.setAttribute('width', (instance.fullScreen) ? windowSize.width : instance.width)
       canvas.setAttribute('height', (instance.fullScreen) ? windowSize.height : instance.height)
+      canvas.style.background = instance.background
     }
 
     function initCanvasEvent () {
-      if (instance.trigger === 'click')
-        canvas.addEventListener('click', (e) => {
-          fireList.push(new Fire(getEventPosition(e)))
-        })
-      else if (instance.trigger === 'move')
-        canvas.addEventListener('mousemove', (e) => {
-          fireList.push(new Fire(getEventPosition(e)))
-        })
+      if (instance.trigger === 'click') {
+          addEventListener('click', (e) => {
+              fireList.push(new Fire(getEventPosition(e)))
+          })
+          /*
+          canvas.addEventListener('click', (e) => {
+            fireList.push(new Fire(getEventPosition(e)))
+          })*/
+      }
+      else if (instance.trigger === 'move') {
+          addEventListener('mousemove', (e) => {
+              fireList.push(new Fire(getEventPosition(e)))
+          })
+          /*
+          canvas.addEventListener('mousemove', (e) => {
+            fireList.push(new Fire(getEventPosition(e)))
+          })*/
+      }
 
       if (instance.fullScreen)
         onresize = setCanvasStyle
@@ -282,8 +293,9 @@
     }
 
     function drawFirework () {
-      drawBackground(context)
+      //drawBackground(context)
 
+      context.clearRect(0,0,canvas.width,canvas.height)
       for (let i = 0; i < fireList.length; i++) {
         fireList[i].draw(context)
         if (fireList[i].checkTimeUp()) {
@@ -296,6 +308,7 @@
     }
 
     if (!!canvas) {
+      context.save()
       setCanvasStyle()
       initCanvasEvent()
       drawFirework()
